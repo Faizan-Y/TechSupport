@@ -1,6 +1,7 @@
 --> Dependencies
 
 * install requests pydantic pydantic-ai
+* export api keys PERPLEXITY_API_KEY & OPENAI_API_KEY
 
 
 
