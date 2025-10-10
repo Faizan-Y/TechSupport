@@ -22,14 +22,32 @@ async def hybrid_controller(user_id: str, user_input: str, usage: RunUsage):
 
     #for classification + tool selection
     prompt = (
-        f"You are a tech support agent. The user sent the following message:\n"
-        f"'{user_input}'\n\n"
+        f"You are a strict tech support assistant.\n"
+        f"The user said:\n'{user_input}'\n\n"
         f"Available tools:\n{tool_list_str}\n\n"
-        "Decide whether this message requires a tool or general chat.\n"
-        "If it requires a tool, respond ONLY in JSON format using these tool names exactly: "
-        f"{', '.join(TOOLS.keys())}\n"
-        '{"tool": "TOOL_NAME", "parameters": {"param1": "value1", ...}}\n'
-        "If it is general chat, respond ONLY with 'general' nothing else strictly."
+        "Your task:\n"
+        "- Decide whether this message requires a tool or is general chat.\n"
+        "- If it requires a tool, respond ONLY in strict JSON format:\n"
+        '  {\"tool\": \"TOOL_NAME\", \"parameters\": {\"param1\": \"value1\", ...}}\n\n'
+        "🚫 NEVER assume or invent any parameter values.\n"
+        "If a required parameter is missing or unclear, respond ONLY with:\n"
+        '  {\"missing_parameter\": \"name_of_parameter\"}\n\n'
+        "If the user is just chatting, respond ONLY with:\n"
+        '  \"general\"\n'
+
+        # f"You are a tech support agent. The user sent the following message:\n"
+        # f"'{user_input}'\n\n"
+        # f"Available tools:\n{tool_list_str}\n\n"
+        # "Decide whether this message requires a tool or general chat.\n"
+        # "If it requires a tool, respond ONLY in JSON format using these tool names exactly: "
+        # f"{', '.join(TOOLS.keys())}\n"
+        # "⚠️ IMPORTANT:\n"
+        # "- NEVER invent or assume any parameter value.\n"
+        # "- If any required parameter is missing, respond ONLY with:\n"
+        # '{"missing_parameter": "name_of_parameter"}\n'
+        # "Do not make up placeholders like 'No reason provided'."
+        # '{"tool": "TOOL_NAME", "parameters": {"param1": "value1", ...}}\n'
+        # "If it is general chat, respond ONLY with 'general' nothing else strictly."
     )
 
     # Asking agent (HybridToolAgent) for decision / we can use keywords too clasify
@@ -47,7 +65,7 @@ async def hybrid_controller(user_id: str, user_input: str, usage: RunUsage):
     )
     # response_str = str(result).strip()
     response_str = getattr(result, "output", str(result)).strip()
-    print("\n🔍 DEBUG - Raw model response:\n", response_str, "\n")
+    print("\nDEBUG - unprocessed response:\n", response_str, "\n")
 
     if response_str.lower() == "general":
         # General chat handled by Perplexity agent
@@ -61,18 +79,43 @@ async def hybrid_controller(user_id: str, user_input: str, usage: RunUsage):
         # Tool execution
         try:
             tool_data = json.loads(response_str)
+
+            # Handle missing parameter case first
+            if "missing_parameter" in tool_data:
+                missing_param = tool_data["missing_parameter"]
+                return f"⚠️ I need the '{missing_param}' to continue. Please provide it along with other parameters too."
+
             tool_name = tool_data.get("tool")
             params = tool_data.get("parameters", {})
-            
+
             if tool_name not in TOOLS:
                 return f"⚠️ Tool '{tool_name}' not recognized."
-            
+
+
+            validated_input = TOOLS[tool_name]["input_model"](**params)
+            # Now missing fields can be checked like this:
+            missing_fields = [
+                field for field, value in validated_input.model_dump().items()
+                if value in [None, "", "unknown", "User requested cancellation"]
+            ]
+
+            # If the model still invents missing params, catch them at runtime
+            # missing_fields = [
+            #     field for field in TOOLS[tool_name]["input_model"].model_fields.keys()
+            #     if field not in params or params[field] in [None, "", "unknown", "User requested cancellation"]
+            # ]
+            if missing_fields:
+                return f"⚠️ Missing parameters: {', '.join(missing_fields)}. Please provide them."
+
             return call_tool(tool_name, params)
-        #can enhance exceptioins 
+
         except json.JSONDecodeError:
             return "⚠️ Could not parse JSON. Please check tool request format."
         except Exception as e:
             return f"⚠️ Error executing tool: {e}"
+        finally:
+            print(f"✅ Finished processing for user={user_id} | input='{user_input}'")
+
         
 async def main():
     print(" Hybrid Terminal Chat (type 'exit' to quit)")

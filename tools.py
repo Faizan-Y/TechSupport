@@ -5,8 +5,8 @@ from typing import Dict
 import json
 
 
-# dummy in-memory documents (demo)
 documents: Dict[str, str] = {}
+# defaults
 user_id = 192731
 auth_token = "dummy"
 
@@ -102,16 +102,19 @@ TOOLS = {
     }
 }
 
-# Dynamic call for tools
+# call for tools
 def call_tool(tool_name: str, params: dict) -> str:
     if tool_name not in TOOLS:
         return f"Tool '{tool_name}' not found."
-    # Only set defaults if not already present
+       # Only set defaults if not already present
     '''if tool_name == "cancel_trip_api":
         if not params.get("usr"):
             params["usr"] = int(user_id)
         if not params.get("auth_token"):
             params["auth_token"] = auth_token'''
     tool = TOOLS[tool_name]
-    validated_input = tool["input_model"](**params)
-    return tool["function"](validated_input)
+    try:
+        validated_input = tool["input_model"](**params)
+        return tool["function"](validated_input)
+    except Exception as e:
+        return f" Missing or invalid parameters for '{tool_name}': {e}"
